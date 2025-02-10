@@ -1,3 +1,9 @@
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    login TEXT NOT NULL UNIQUE,
+    password_hash text NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS virtual_machines (
     id SERIAL PRIMARY KEY,
     vm_id UUID NOT NULL UNIQUE,
