@@ -15,11 +15,17 @@ CREATE TABLE IF NOT EXISTS virtual_machines (
 CREATE TABLE IF NOT EXISTS disks (
     id SERIAL PRIMARY KEY,
     disk_id UUID NOT NULL UNIQUE,
+    size INTEGER NOT NULL CHECK (size > 0)
+);
+
+CREATE TABLE IF NOT EXISTS vm_disks (
     vm_id UUID REFERENCES virtual_machines(vm_id) ON DELETE CASCADE,
-    size INTEGER NOT NULL CHECK(size > 0)
+    disk_id UUID REFERENCES disks(disk_id) ON DELETE CASCADE,
+    PRIMARY KEY (vm_id, disk_id)
 );
 
 CREATE TABLE IF NOT EXISTS vm_sessions (
     id SERIAL PRIMARY KEY,
     vm_id UUID REFERENCES virtual_machines(vm_id) ON DELETE CASCADE
 );
+
