@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS virtual_machines (
     id SERIAL PRIMARY KEY,
-    vm_id UUID NOT NULL UNIQUE,
+    vm_id INTEGER NOT NULL UNIQUE,
     ram INTEGER NOT NULL CHECK (ram > 0),
     cpu INTEGER NOT NULL CHECK (cpu > 0)
 );
