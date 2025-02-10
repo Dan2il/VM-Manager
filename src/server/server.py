@@ -1,4 +1,3 @@
-
 import logging
 import asyncio
 import asyncpg
@@ -20,7 +19,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger()
-
 
 
 class VMServer:
@@ -65,11 +63,14 @@ class VMServer:
                 message = data.decode().strip().split()
                 logger.info(f"Message: {message}, from {address}")
 
+                command = message[0]
                 try:
-                    if "ADD_USER" in message[0] and len(message) == 3:
+                    if command == "ADD_USER" and len(message) == 3:
                         login, password = message[1], message[2]
                         await self.add_user(login, password, writer)
-                    elif "AUTH" in message[0] and len(message) == 4:
+                    elif command == "LIST_USERS":
+                        await self.list_users(writer)
+                    elif command == "AUTH" and len(message) == 4:
                         vm_id, login, password = message[1], message[2], message[3]
                         if await self.authenticate(login, password):
                             self.authenticated_vms.add(vm_id)
@@ -77,19 +78,31 @@ class VMServer:
                         else:
                             writer.write(b"AUTHENTICATE_FAIL\n")
                         await writer.drain()
+                    elif command == "ADD_VM":
+                        pass
+                    elif command == "LIST_CON_VM":
+                        pass
+                    elif command == "LIST_AU_VM":
+                        pass
+                    elif command == "LIST_ALL_VM":
+                        pass
+                    elif command == "UPDATE_VM":
+                        pass
+                    elif command == "LOGOUT_VM":
+                        pass
+                    elif command == "LIST_DISKS":
+                        pass
                     else:
                         writer.write(b"UNKNOWN_COMMAND\n")
                     await writer.drain()
                 except Exception as e:
                     logger.error(f"Error handling client request: {e}")
                     writer.write(b"ERROR: Something went wrong\n")
-                    print(traceback.format_exc())
                     await writer.drain()
         finally:
             writer.close()
             await writer.wait_closed()
             logger.info(f"Connection {address} closed.")
-
 
     async def add_user(self, login, password, writer: StreamWriter):
         async with self.db_pool.acquire() as connect:
@@ -108,6 +121,17 @@ class VMServer:
             )
             writer.write(f"User {login} created successfully\n".encode())
             await writer.drain()
+
+    async def list_users(self, writer: StreamWriter):
+        async with self.db_pool.acquire() as connect:
+            data = await connect.fetch(
+                "SELECT id, login FROM users"
+            )
+            response = "\n".join(
+                [f"User {row['id']}: {row['login']}" for row in data]
+            )
+            writer.write(response.encode() + b"\n")
+        await writer.drain()
 
     async def authenticate(self, login, password):
         async with self.db_pool.acquire() as connect:
