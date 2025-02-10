@@ -7,7 +7,7 @@ import traceback
 from asyncio import StreamReader, StreamWriter
 from asyncpg import Pool
 
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from src.server import setting
 from src.server.virtual_machine import VirtualMachine
@@ -26,19 +26,19 @@ class VMServer:
     def __init__(self, db_pool):
         self.db_pool: Pool = db_pool
         """Пул соединений с базой данных"""
-        self.connected_vms: dict[uuid4, VirtualMachine] = {}
+        self.connected_vms: dict[UUID, VirtualMachine] = {}
         """
         Словарь, хранит id и объект подключенной виртуальной машины
         """
 
-        self.authenticated_vms: set[uuid4] = set()
+        self.authenticated_vms: set[UUID] = set()
         """
         Хранит успешно авторизированных VM
         
         Нужно, для проверки, что виртуальная машина может выполнять определенные команды
         """
 
-        self.all_connected_vms: dict[uuid4, VirtualMachine] = {}
+        self.all_connected_vms: dict[UUID, VirtualMachine] = {}
         """
         Хранит все когда-либо подключенные VM
         Словарь, хранит id и объект подключенной виртуальной машины
@@ -78,11 +78,11 @@ class VMServer:
                         else:
                             writer.write(b"AUTHENTICATE_FAIL\n")
                         await writer.drain()
-                    elif command == "ADD_VM" and len(message) > 5:
-                        ram, cpu, disk_id, disk_size = message[1], message[2], message[3], message[4], message[5]
-                        await self.add_vm(ram, cpu, disk_id, disk_size, writer)
+                    elif command == "ADD_VM" and len(message) > 3:
+                        ram, cpu, disk_size = message[1], message[2], message[3]
+                        await self.add_vm(ram, cpu, disk_size, writer)
                     elif command == "LIST_CON_VM":
-                        pass
+                        await self.list_connect_vm(writer)
                     elif command == "LIST_AU_VM":
                         pass
                     elif command == "LIST_ALL_VM":
@@ -150,29 +150,31 @@ class VMServer:
                 logger.warning(f"Authentication failed for {login}: user not found")
         return False
 
-    async def add_vm(self, ram, cpu, disk_id, disk_size, writer):
+    async def add_vm(self, ram, cpu, disk_size, writer):
         async with self.db_pool.acquire() as connect:
-            vm_id = str(uuid4())
+            vm_id = uuid4()
+            disk_id = uuid4()
             vm = VirtualMachine(vm_id=vm_id, ram=ram, cpu=cpu, disks={disk_id: disk_size})
             await connect.execute(
                 "INSERT INTO virtual_machines (vm_id, ram, cpu) VALUES ($1, $2, $3)",
-                str(vm.vm_id), str(vm.ram), str(vm.cpu)
+                vm.vm_id, int(vm.ram), int(vm.cpu)
             )
             await connect.execute(
                 "INSERT INTO disks (disk_id, vm_id, size) VALUES ($1, $2, $3)",
-                str(disk_id), str(vm.vm_id), str(disk_size)
+                disk_id, vm.vm_id, int(disk_size)
             )
 
             self.connected_vms[vm_id] = vm
             self.all_connected_vms[vm_id] = vm
 
-            writer.write(f"VM:\n"
-                         f"id: {vm_id}\n,"
-                         f"ram: {vm.ram}\n,"
-                         f"cpu: {vm.cpu}\n,"
-                         f"disks: {vm.disks}".encode())
-            await writer.drain()
+            writer.write(str(vm).encode())
 
+    async def list_connect_vm(self, writer):
+        result = "".join([f"{repr(vm)}\n" for _, vm in self.connected_vms.items()])
+        if len(result) == 0:
+            result = "no connect VM"
+        writer.write(result.encode() + b"\n")
+        await writer.drain()
 
 async def start_server(user="admin", password="admin",
                        database="vm_manager", host="localhost"):
