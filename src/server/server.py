@@ -80,19 +80,25 @@ class VMServer:
                         await writer.drain()
                     elif command == "ADD_VM" and len(message) > 3:
                         ram, cpu, disk_size = message[1], message[2], message[3]
-                        await self.add_vm(ram, cpu, disk_size, writer)
+
+                        disk_id = None
+                        if len(message) == 5:
+                            disk_id = UUID(message[4])
+                        await self.add_vm(ram, cpu, disk_size, writer, disk_id)
                     elif command == "LIST_CON_VM":
                         await self.list_connect_vm(writer)
                     elif command == "LIST_AU_VM":
-                        pass
+                        await self.list_authenticated_vm(writer)
                     elif command == "LIST_ALL_VM":
-                        pass
+                        await self.get_all_vm(writer)
                     elif command == "UPDATE_VM":
-                        pass
+                        vm_id, ram, cpu = message[1], message[2], message[3]
+                        await self.update_vm(vm_id, ram, cpu, writer)
                     elif command == "LOGOUT_VM":
-                        pass
+                        vm_id = UUID(message[1])
+                        await self.logout_vm(vm_id, writer)
                     elif command == "LIST_DISKS":
-                        pass
+                        await self.list_disks(writer)
                     else:
                         writer.write(b"UNKNOWN_COMMAND\n")
                     await writer.drain()
@@ -150,19 +156,51 @@ class VMServer:
                 logger.warning(f"Authentication failed for {login}: user not found")
         return False
 
-    async def add_vm(self, ram, cpu, disk_size, writer):
+    async def add_vm(self, ram, cpu, disk_size, writer, disk_id=None):
         async with self.db_pool.acquire() as connect:
             vm_id = uuid4()
-            disk_id = uuid4()
-            vm = VirtualMachine(vm_id=vm_id, ram=ram, cpu=cpu, disks={disk_id: disk_size})
+            new_disk_id = uuid4()
+            vm = VirtualMachine(vm_id=vm_id,
+                                ram=ram,
+                                cpu=cpu,
+                                disks={disk_id: disk_size} if disk_id else {new_disk_id: disk_size})
+
             await connect.execute(
                 "INSERT INTO virtual_machines (vm_id, ram, cpu) VALUES ($1, $2, $3)",
                 vm.vm_id, int(vm.ram), int(vm.cpu)
             )
-            await connect.execute(
-                "INSERT INTO disks (disk_id, vm_id, size) VALUES ($1, $2, $3)",
-                disk_id, vm.vm_id, int(disk_size)
-            )
+
+            if disk_id:
+                existing_disk = await connect.fetchrow(
+                    "SELECT disk_id FROM disks WHERE disk_id = $1", disk_id
+                )
+                if existing_disk:
+                    await connect.execute(
+                        "INSERT INTO vm_disks (vm_id, disk_id) VALUES ($1, $2)",
+                        vm.vm_id, disk_id
+                    )
+                    writer.write(f"VM {vm.vm_id} add to exist disk {disk_id}\n".encode())
+                else:
+                    await connect.execute(
+                        "INSERT INTO disks (disk_id, size) VALUES ($1, $2)",
+                        new_disk_id, int(disk_size)
+                    )
+                    await connect.execute(
+                        "INSERT INTO vm_disks (vm_id, disk_id) VALUES ($1, $2)",
+                        vm.vm_id, new_disk_id
+                    )
+                    writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
+            else:
+                await connect.execute(
+                    "INSERT INTO disks (disk_id, size) VALUES ($1, $2)",
+                    new_disk_id, int(disk_size)
+                )
+
+                await connect.execute(
+                    "INSERT INTO vm_disks (vm_id, disk_id) VALUES ($1, $2)",
+                    vm.vm_id, new_disk_id
+                )
+                writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
 
             self.connected_vms[vm_id] = vm
             self.all_connected_vms[vm_id] = vm
@@ -174,7 +212,47 @@ class VMServer:
         if len(result) == 0:
             result = "no connect VM"
         writer.write(result.encode() + b"\n")
+
+    async def list_authenticated_vm(self, writer):
+        result = "".join([f"{repr(vm)}\n" for vm in self.authenticated_vms])
+        if len(result) == 0:
+            result = "no authenticate VM"
+        writer.write(result.encode() + b"\n")
+
+    async def get_all_vm(self, writer):
+        result = "".join([f"{repr(vm)}\n" for _, vm in self.all_connected_vms.items()])
+        if len(result) == 0:
+            result = "no authenticate VM"
+        writer.write(result.encode() + b"\n")
+
+    async def update_vm(self, vm_id, ram, cpu, writer):
+        if vm_id not in self.authenticated_vms:
+            writer.write(f"VM {vm_id} not found\n".encode())
+        else:
+            async with self.db_pool.acquire() as connect:
+                await connect.execute(
+                    "UPDATE virtual_machines SET ram = $1, cpu = $2 WHERE vm_id = $3",
+                    ram, cpu, vm_id
+                )
+                if vm_id in self.connected_vms:
+                    self.connected_vms[vm_id].ram = ram
+                    self.connected_vms[vm_id].cpu = cpu
+                writer.write(f"VM {vm_id} updated: RAM={ram}, CPU={cpu}\n".encode())
+
+    async def logout_vm(self, vm_id, writer: StreamWriter):
+        if vm_id in self.authenticated_vms:
+            self.authenticated_vms.remove(vm_id)
+            writer.write(f"VM {vm_id} logout\n".encode())
+        else:
+            writer.write(f"VM {vm_id} not found\n".encode())
         await writer.drain()
+
+    async def list_disks(self, writer: StreamWriter):
+        async with self.db_pool.acquire() as connect:
+            rows = await connect.fetch("SELECT disk_id, vm_id, size FROM disks")
+            response = "\n".join([f"Disk {row['disk_id']}: VM={row['vm_id']}, Size={row['size']}" for row in rows])
+            writer.write(response.encode() + b"\n")
+
 
 async def start_server(user="admin", password="admin",
                        database="vm_manager", host="localhost"):
