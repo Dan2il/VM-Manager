@@ -78,8 +78,9 @@ class VMServer:
                         else:
                             writer.write(b"AUTHENTICATE_FAIL\n")
                         await writer.drain()
-                    elif command == "ADD_VM":
-                        pass
+                    elif command == "ADD_VM" and len(message) > 5:
+                        ram, cpu, disk_id, disk_size = message[1], message[2], message[3], message[4], message[5]
+                        await self.add_vm(ram, cpu, disk_id, disk_size, writer)
                     elif command == "LIST_CON_VM":
                         pass
                     elif command == "LIST_AU_VM":
@@ -149,27 +150,27 @@ class VMServer:
                 logger.warning(f"Authentication failed for {login}: user not found")
         return False
 
-    async def add_vm(self, reader: StreamReader, writer: StreamWriter):
-        data = await reader.read(setting.MESSAGE_LIMIT)
-        message = data.decode().strip().split()
-
-        vm_id, ram, cpu, disk_id, disk_size = message[1], message[2], message[3], message[4], message[5]
-
+    async def add_vm(self, ram, cpu, disk_id, disk_size, writer):
         async with self.db_pool.acquire() as connect:
+            vm_id = str(uuid4())
             vm = VirtualMachine(vm_id=vm_id, ram=ram, cpu=cpu, disks={disk_id: disk_size})
             await connect.execute(
-                "INSERT INTO virtual_machines (vm_id, ram, cpu) VALUES ($1 $2 $3)",
-                vm.vm_id, vm.ram, vm.cpu
+                "INSERT INTO virtual_machines (vm_id, ram, cpu) VALUES ($1, $2, $3)",
+                str(vm.vm_id), str(vm.ram), str(vm.cpu)
             )
             await connect.execute(
                 "INSERT INTO disks (disk_id, vm_id, size) VALUES ($1, $2, $3)",
-                disk_id, vm.vm_id, disk_size
+                str(disk_id), str(vm.vm_id), str(disk_size)
             )
 
             self.connected_vms[vm_id] = vm
             self.all_connected_vms[vm_id] = vm
 
-            writer.write(f"VM {vm_id} add\n".encode())
+            writer.write(f"VM:\n"
+                         f"id: {vm_id}\n,"
+                         f"ram: {vm.ram}\n,"
+                         f"cpu: {vm.cpu}\n,"
+                         f"disks: {vm.disks}".encode())
             await writer.drain()
 
 
