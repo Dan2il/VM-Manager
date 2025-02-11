@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: vm_manager_db
+    restart: always
+    environment:
+      POSTGRES_DB: vm_manager
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    networks:
+      - vm_network
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./src/DB/create_db.sql:/docker-entrypoint-initdb.d/create_db.sql
+
+
+  app:
+    build: .
+    container_name: vm_server
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: "postgresql://admin:admin@db:5432/vm_manager"
+    ports:
+      - "8888:8888"
+    networks:
+      - vm_network
+
+networks:
+  vm_network:
+    driver: bridge
+
+volumes:
+  pg_data:
