@@ -145,7 +145,7 @@ class VMServer:
                 "INSERT INTO users (login, password_hash) VALUES ($1, $2)",
                 login, hashed_password.decode('utf-8')
             )
-            writer.write(f"User {login} created successfully\n".encode())
+            await writer.write(f"User {login} created successfully\n".encode())
             await writer.drain()
 
     async def list_users(self, writer: StreamWriter):
@@ -161,7 +161,7 @@ class VMServer:
             response = "\n".join(
                 [f"User {row['id']}: {row['login']}" for row in data]
             )
-            writer.write(response.encode() + b"\n")
+            await writer.write(response.encode() + b"\n")
         await writer.drain()
 
     async def authenticate(self, login, password):
@@ -238,12 +238,12 @@ class VMServer:
                     "INSERT INTO vm_disks (vm_id, disk_id) VALUES ($1, $2)",
                     vm.vm_id, new_disk_id
                 )
-                writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
+                await writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
 
             self.connected_vms[vm_id] = vm
             self.all_connected_vms[vm_id] = vm
 
-            writer.write(str(vm).encode())
+            await writer.write(str(vm).encode())
 
     async def list_connect_vm(self, writer):
         """
