@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16
+    container_name: test_vm_manager_db
+    restart: always
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../src/DB/create_db.sql:/docker-entrypoint-initdb.d/create_db.sql
+
+volumes:
+  pg_data:
