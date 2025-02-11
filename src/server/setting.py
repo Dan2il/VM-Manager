@@ -1,3 +1,7 @@
+"""
+Настройки, для server.py
+"""
+
 HOST = "0.0.0.0"
 PORT = 8888
 DB_CONFIG = {
@@ -7,7 +11,6 @@ DB_CONFIG = {
     "host": "localhost",
     "port": 5432,
 }
-
 
 MESSAGE_LIMIT = 1024
 TIMEOUT_SERVER = 600

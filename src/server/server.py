@@ -1,13 +1,17 @@
+"""
+Модуль содержит реалицаию имитации
+серверной части оркестратора VM
+"""
+
 import logging
 import asyncio
+from uuid import uuid4, UUID
+from asyncio import StreamReader, StreamWriter
 import asyncpg
 import bcrypt
-import traceback
 
-from asyncio import StreamReader, StreamWriter
 from asyncpg import Pool
 
-from uuid import uuid4, UUID
 
 from src.server import setting
 from src.server.virtual_machine import VirtualMachine
@@ -22,8 +26,10 @@ logger = logging.getLogger()
 
 
 class VMServer:
-
+    """Класс, для управления VM"""
     def __init__(self, db_pool):
+        """Инициализирует VMServer"""
+
         self.db_pool: Pool = db_pool
         """Пул соединений с базой данных"""
         self.connected_vms: dict[UUID, VirtualMachine] = {}
@@ -45,8 +51,14 @@ class VMServer:
         """
 
     async def connect_client(self, reader: StreamReader, writer: StreamWriter):
+        """
+        Обрабатывает команды от клиента
+        :param reader:
+        :param writer:
+        :return:
+        """
         address = writer.get_extra_info("peername")
-        logger.info(f"New connection: {address}")
+        logger.info("New connection: %s", address)
 
         try:
             while True:
@@ -54,14 +66,14 @@ class VMServer:
                     data = await asyncio.wait_for(reader.read(setting.MESSAGE_LIMIT),
                                                   timeout=setting.TIMEOUT_SERVER)
                     if not data:
-                        logger.info(f"Client {address} disconnected.")
+                        logger.info("Client %s disconnected", address)
                         break
                 except asyncio.TimeoutError:
                     logger.error("Timeout waiting for data from client")
                     break
 
                 message = data.decode().strip().split()
-                logger.info(f"Message: {message}, from {address}")
+                logger.info("Message: %s, from %s", message, address)
 
                 command = message[0]
                 try:
@@ -103,15 +115,22 @@ class VMServer:
                         writer.write(b"UNKNOWN_COMMAND\n")
                     await writer.drain()
                 except Exception as e:
-                    logger.error(f"Error handling client request: {e}")
+                    logger.error("Error handling client request: %s", str(e))
                     writer.write(b"ERROR: Something went wrong\n")
                     await writer.drain()
         finally:
             writer.close()
             await writer.wait_closed()
-            logger.info(f"Connection {address} closed.")
+            logger.info("Connection %s closed", address)
 
     async def add_user(self, login, password, writer: StreamWriter):
+        """
+        Добавляет пользователя
+        :param login:
+        :param password:
+        :param writer:
+        :return:
+        """
         async with self.db_pool.acquire() as connect:
             existing_user = await connect.fetchrow(
                 "SELECT id FROM users WHERE login = $1", login
@@ -130,6 +149,11 @@ class VMServer:
             await writer.drain()
 
     async def list_users(self, writer: StreamWriter):
+        """
+        Отправляет в writer список пользователей
+        :param writer:
+        :return:
+        """
         async with self.db_pool.acquire() as connect:
             data = await connect.fetch(
                 "SELECT id, login FROM users"
@@ -141,6 +165,12 @@ class VMServer:
         await writer.drain()
 
     async def authenticate(self, login, password):
+        """
+        Аутентифицирует пользовтеля
+        :param login:
+        :param password:
+        :return:
+        """
         async with self.db_pool.acquire() as connect:
             data = await connect.fetchrow(
                 "SELECT password_hash FROM users WHERE login = $1", login
@@ -148,15 +178,23 @@ class VMServer:
             if data:
                 stored_password_hash = data['password_hash']
                 if bcrypt.checkpw(password.encode('utf-8'), stored_password_hash.encode('utf-8')):
-                    logger.info(f"Authentication successful for {login}")
+                    logger.info("Authentication successful for %s", login)
                     return True
-                else:
-                    logger.warning(f"Authentication failed for {login}: incorrect password")
+                logger.error("Authentication failed for %s: incorrect password", login)
             else:
-                logger.warning(f"Authentication failed for {login}: user not found")
+                logger.error("Authentication failed for %s: user not found", login)
         return False
 
     async def add_vm(self, ram, cpu, disk_size, writer, disk_id=None):
+        """
+        Добавляет VM
+        :param ram:
+        :param cpu:
+        :param disk_size:
+        :param writer:
+        :param disk_id:
+        :return:
+        """
         async with self.db_pool.acquire() as connect:
             vm_id = uuid4()
             new_disk_id = uuid4()
@@ -208,24 +246,47 @@ class VMServer:
             writer.write(str(vm).encode())
 
     async def list_connect_vm(self, writer):
+        """
+        Отправляет в writer список подключенных VM
+        :param writer:
+        :return:
+        """
         result = "".join([f"{repr(vm)}\n" for _, vm in self.connected_vms.items()])
         if len(result) == 0:
             result = "no connect VM"
         writer.write(result.encode() + b"\n")
 
-    async def list_authenticated_vm(self, writer):
+    async def list_authenticated_vm(self, writer: StreamWriter):
+        """
+        Отправляет в writer список аутентифицированных VM
+        :param writer:
+        :return:
+        """
         result = "".join([f"{repr(vm)}\n" for vm in self.authenticated_vms])
         if len(result) == 0:
             result = "no authenticate VM"
         writer.write(result.encode() + b"\n")
 
-    async def get_all_vm(self, writer):
+    async def get_all_vm(self, writer: StreamWriter):
+        """
+        Отправляет в writer список всех когда либо подключенных VM
+        :param writer:
+        :return:
+        """
         result = "".join([f"{repr(vm)}\n" for _, vm in self.all_connected_vms.items()])
         if len(result) == 0:
             result = "no authenticate VM"
         writer.write(result.encode() + b"\n")
 
-    async def update_vm(self, vm_id, ram, cpu, writer):
+    async def update_vm(self, vm_id, ram, cpu, writer: StreamWriter):
+        """
+        Обновляет ram и|или cpu у VM с vm_id
+        :param vm_id:
+        :param ram:
+        :param cpu:
+        :param writer:
+        :return:
+        """
         if vm_id not in self.authenticated_vms:
             writer.write(f"VM {vm_id} not found\n".encode())
         else:
@@ -240,6 +301,12 @@ class VMServer:
                 writer.write(f"VM {vm_id} updated: RAM={ram}, CPU={cpu}\n".encode())
 
     async def logout_vm(self, vm_id, writer: StreamWriter):
+        """
+        Выходит из VM с vm_id
+        :param vm_id:
+        :param writer:
+        :return:
+        """
         if vm_id in self.authenticated_vms:
             self.authenticated_vms.remove(vm_id)
             writer.write(f"VM {vm_id} logout\n".encode())
@@ -248,14 +315,25 @@ class VMServer:
         await writer.drain()
 
     async def list_disks(self, writer: StreamWriter):
+        """
+        Отправляет в writer список дисков
+        :param writer:
+        :return:
+        """
         async with self.db_pool.acquire() as connect:
             rows = await connect.fetch("SELECT disk_id, vm_id, size FROM disks")
-            response = "\n".join([f"Disk {row['disk_id']}: VM={row['vm_id']}, Size={row['size']}" for row in rows])
+            response = "\n".join([f"Disk {row['disk_id']}:"
+                                  f"VM={row['vm_id']}, Size={row['size']}" for row in rows])
             writer.write(response.encode() + b"\n")
 
 
 async def start_server(user="admin", password="admin",
                        database="vm_manager", host="localhost"):
+    """
+    Запускает реализацию VMserver
+
+    Подключается к базе данных
+    """
     try:
         db_pool = await asyncpg.create_pool(
             user=user,
@@ -267,7 +345,7 @@ async def start_server(user="admin", password="admin",
         logger.error("DB not found\n")
         raise
     except asyncpg.exceptions.InvalidPasswordError:
-        logger.error(f"invalid password authentication for user\n")
+        logger.error("invalid password authentication for user\n")
         raise
     server = VMServer(db_pool)
 
@@ -276,7 +354,7 @@ async def start_server(user="admin", password="admin",
     )
 
     addr = server_coroutine.sockets[0].getsockname()
-    logger.info(f"Serving on {addr}\n")
+    logger.info("Serving on %s\n", addr)
 
     async with server_coroutine:
         await server_coroutine.serve_forever()

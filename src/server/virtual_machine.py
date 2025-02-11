@@ -1,9 +1,14 @@
-from pydantic import BaseModel, Field
+"""
+Модуль содержит реализацию имитации VM
+"""
+
 from uuid import UUID
+from pydantic import BaseModel, Field
+
 
 class VirtualMachine(BaseModel):
     """Класс, представляющий собой виртуальную машину"""
-    
+
     vm_id: UUID
     ram: int = Field(gt=0)
     cpu: int = Field(gt=0)
