@@ -1,8 +1,7 @@
 PY = py.exe
 
-RUN_DB:
-	cd .\src\
-	docker-compose up -d
+run:
+	docker-compose up --build
 
 
 test:
