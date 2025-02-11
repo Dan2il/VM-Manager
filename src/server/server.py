@@ -92,7 +92,6 @@ class VMServer:
                         await writer.drain()
                     elif command == "ADD_VM" and len(message) > 3:
                         ram, cpu, disk_size = message[1], message[2], message[3]
-
                         disk_id = None
                         if len(message) == 5:
                             disk_id = UUID(message[4])
@@ -111,6 +110,11 @@ class VMServer:
                         await self.logout_vm(vm_id, writer)
                     elif command == "LIST_DISKS":
                         await self.list_disks(writer)
+                    elif command == "LONG_WAIT":
+                        """Для имитации долгих запросов"""
+                        logger.info("LONG_WAIT START")
+                        await asyncio.sleep(600)
+                        logger.info("LONG_WAIT FINISH")
                     else:
                         writer.write(b"UNKNOWN_COMMAND\n")
                     await writer.drain()
@@ -145,7 +149,7 @@ class VMServer:
                 "INSERT INTO users (login, password_hash) VALUES ($1, $2)",
                 login, hashed_password.decode('utf-8')
             )
-            await writer.write(f"User {login} created successfully\n".encode())
+            writer.write(f"User {login} created successfully\n".encode())
             await writer.drain()
 
     async def list_users(self, writer: StreamWriter):
@@ -161,7 +165,7 @@ class VMServer:
             response = "\n".join(
                 [f"User {row['id']}: {row['login']}" for row in data]
             )
-            await writer.write(response.encode() + b"\n")
+            writer.write(response.encode() + b"\n")
         await writer.drain()
 
     async def authenticate(self, login, password):
@@ -238,12 +242,12 @@ class VMServer:
                     "INSERT INTO vm_disks (vm_id, disk_id) VALUES ($1, $2)",
                     vm.vm_id, new_disk_id
                 )
-                await writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
+                writer.write(f"VM {vm.vm_id} add to new disk {new_disk_id}\n".encode())
 
             self.connected_vms[vm_id] = vm
             self.all_connected_vms[vm_id] = vm
 
-            await writer.write(str(vm).encode())
+            writer.write(str(vm).encode())
 
     async def list_connect_vm(self, writer):
         """
@@ -350,7 +354,7 @@ async def start_server(user="admin", password="admin",
     server = VMServer(db_pool)
 
     server_coroutine = await asyncio.start_server(
-        server.connect_client, '127.0.0.1', 8888
+        server.connect_client, '0.0.0.0', 8888
     )
 
     addr = server_coroutine.sockets[0].getsockname()
@@ -361,4 +365,4 @@ async def start_server(user="admin", password="admin",
 
 
 if __name__ == '__main__':
-    asyncio.run(start_server())
+    asyncio.run(start_server(host='db'))

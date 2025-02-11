@@ -2,15 +2,16 @@
 
 ### Запуск
 
-1. Запускаем БД:
-        
-        docker-compos e up -d
+1. Запускаем БД и сервер:
 
-2. Запускаем сервер: 
 
-        py.exe -m src.server.server
+      docker-compose up --build
 
-3. Запускаем клиент:
+или
+      
+      make run
+
+2. Запускаем клиент:
 
         py.exe .\client.py
 
